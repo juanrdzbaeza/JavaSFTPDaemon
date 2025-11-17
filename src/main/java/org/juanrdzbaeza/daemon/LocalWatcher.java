@@ -3,6 +3,7 @@ package org.juanrdzbaeza.daemon;
 
 import java.io.IOException;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -14,7 +15,6 @@ public class LocalWatcher {
     private WatchService watcher;
     private volatile boolean running = true;
 
-    // evita subir la misma ruta en paralelo
     private final Set<String> uploading = ConcurrentHashMap.newKeySet();
 
     private static final long STABLE_WAIT_MS = 300;
@@ -28,10 +28,12 @@ public class LocalWatcher {
 
     public void start() throws IOException, InterruptedException {
         watcher = FileSystems.getDefault().newWatchService();
-        dir.register(watcher, StandardWatchEventKinds.ENTRY_CREATE, StandardWatchEventKinds.ENTRY_MODIFY);
+        // registrar recursivamente todos los subdirectorios
+        registerAll(dir);
 
         while (running) {
             WatchKey key = watcher.take();
+            Path watchDir = (Path) key.watchable();
             for (WatchEvent<?> ev : key.pollEvents()) {
                 WatchEvent.Kind<?> kind = ev.kind();
 
@@ -41,19 +43,40 @@ public class LocalWatcher {
                 }
 
                 Path rel = (Path) ev.context();
-                Path full = dir.resolve(rel).toAbsolutePath();
+                Path full = watchDir.resolve(rel).toAbsolutePath();
                 System.out.println("Local change detected: " + ev.kind() + " -> " + full);
 
-                // ignorar ficheros temporales comunes
                 if (isTemporaryFile(full)) continue;
 
-                // si fue descargado recientemente por el sync remoto, ignorar para evitar bucle
+                if (kind == StandardWatchEventKinds.ENTRY_CREATE) {
+                    // si es directorio creado, registrarlo para vigilar recursivamente
+                    if (Files.isDirectory(full)) {
+                        try {
+                            registerAll(full);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                        // no subir directorio en sí
+                        continue;
+                    }
+                }
+
+                if (kind == StandardWatchEventKinds.ENTRY_DELETE) {
+                    // borrar remoto (archivo o directorio)
+                    try {
+                        sftp.deleteRemote(full);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    continue;
+                }
+
+                // ENTRY_CREATE / ENTRY_MODIFY (archivo)
                 if (state.isRecentlyDownloaded(full)) {
                     System.out.println("Ignorado (reciente descarga remota): " + full);
                     continue;
                 }
 
-                // asegurar que es un fichero regular y esperar a que termine de escribirse
                 if (!Files.exists(full) || !Files.isRegularFile(full)) continue;
                 if (!waitForStableFile(full)) {
                     System.out.println("Archivo no estable, se omite: " + full);
@@ -64,12 +87,10 @@ public class LocalWatcher {
                     long lastMod = Files.getLastModifiedTime(full).toMillis();
                     Long prev = state.getLastUploaded(full);
                     if (prev != null && prev >= lastMod) {
-                        // ya subido esa versión o más nueva
                         continue;
                     }
 
                     String keyStr = full.toString();
-                    // evitar subidas concurrentes de la misma ruta
                     if (!uploading.add(keyStr)) {
                         System.out.println("Ya en subida: " + full);
                         continue;
@@ -131,5 +152,19 @@ public class LocalWatcher {
             return false;
         }
         return false;
+    }
+
+    // registra un directorio y todos sus subdirectorios en el WatchService
+    private void registerAll(final Path start) throws IOException {
+        Files.walkFileTree(start, new java.util.HashSet<>(), Integer.MAX_VALUE, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dirPath, BasicFileAttributes attrs) throws IOException {
+                dirPath.register(watcher,
+                        StandardWatchEventKinds.ENTRY_CREATE,
+                        StandardWatchEventKinds.ENTRY_MODIFY,
+                        StandardWatchEventKinds.ENTRY_DELETE);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 }
