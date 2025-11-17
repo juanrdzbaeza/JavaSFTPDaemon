@@ -6,15 +6,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Estado compartido entre SftpSyncService y LocalWatcher para:
- * - marcar archivos descargados recientemente (evitar re-subida inmediata)
- * - llevar el mapa de últimas subidas (evitar re-subidas iguales)
+ * Estado compartido entre SftpSyncService y LocalWatcher.
+ * Añadidos métodos para consultar timestamps de descargas.
  */
 public class SyncState {
     private final Map<String, Long> lastDownloaded = new ConcurrentHashMap<>();
     private final Map<String, Long> lastUploaded = new ConcurrentHashMap<>();
-
-    // ventana en ms durante la que un cambio local se considera provocado por una descarga remota
     private final long recentDownloadWindowMs;
 
     public SyncState(long recentDownloadWindowMs) {
@@ -22,7 +19,7 @@ public class SyncState {
     }
 
     public SyncState() {
-        this(3000L); // 3s por defecto
+        this(3000L);
     }
 
     public void markDownloaded(Path p) {
@@ -36,6 +33,19 @@ public class SyncState {
         return t != null && (System.currentTimeMillis() - t) < recentDownloadWindowMs;
     }
 
+    /**
+     * Devuelve el timestamp (ms) de la última descarga registrada para la ruta, o null si no existe.
+     */
+    public Long getDownloadedTimestamp(Path p) {
+        if (p == null) return null;
+        return lastDownloaded.get(p.toAbsolutePath().toString());
+    }
+
+    public void removeDownloaded(Path p) {
+        if (p == null) return;
+        lastDownloaded.remove(p.toAbsolutePath().toString());
+    }
+
     public void markUploaded(Path p, long lastModifiedMillis) {
         if (p == null) return;
         lastUploaded.put(p.toAbsolutePath().toString(), lastModifiedMillis);
@@ -44,5 +54,10 @@ public class SyncState {
     public Long getLastUploaded(Path p) {
         if (p == null) return null;
         return lastUploaded.get(p.toAbsolutePath().toString());
+    }
+
+    public void removeUploaded(Path p) {
+        if (p == null) return;
+        lastUploaded.remove(p.toAbsolutePath().toString());
     }
 }
