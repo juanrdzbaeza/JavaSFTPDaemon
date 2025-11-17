@@ -9,12 +9,13 @@ public class JavaSFTPDaemon {
     public static void main(String[] args) throws IOException {
         Config cfg = Config.load("config.properties");
         FtpSyncService ftp = new FtpSyncService(cfg);
-        LocalWatcher watcher = new LocalWatcher(cfg.getLocalDir(), ftp);
+        SftpSyncService sftp = new SftpSyncService(cfg);
+        LocalWatcher watcher = new LocalWatcher(cfg.getLocalDir(), sftp);
 
         ExecutorService exec = Executors.newFixedThreadPool(2);
         exec.submit(() -> {
             try {
-                ftp.startPeriodicSync();
+                sftp.startPeriodicSync();
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -30,7 +31,7 @@ public class JavaSFTPDaemon {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try {
                 watcher.stop();
-                ftp.stop();
+                sftp.stop();
                 exec.shutdownNow();
             } catch (Exception ignored) {}
         }));
