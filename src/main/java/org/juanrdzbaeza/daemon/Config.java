@@ -58,6 +58,13 @@ public class Config {
     private final String remoteDir;
     private final int pollSeconds;
 
+    /**
+     * Construye la configuración a partir de un objeto {@link Properties}.
+     *
+     * <p>Este constructor es privado: usa {@link #load(String)} para cargar desde disco.</p>
+     *
+     * @param p propiedades cargadas
+     */
     private Config(Properties p) {
         this.ftpHost = p.getProperty("ftp.host", "localhost");
         this.ftpPort = Integer.parseInt(p.getProperty("ftp.port", "21"));
@@ -68,6 +75,16 @@ public class Config {
         this.pollSeconds = Integer.parseInt(p.getProperty("poll.seconds", "30"));
     }
 
+    /**
+     * Carga la configuración desde la ruta indicada.
+     *
+     * <p>La ruta es la ubicación del fichero de propiedades. Lanza {@link IOException}
+     * si el fichero no existe o no se puede leer.</p>
+     *
+     * @param path ruta al fichero de propiedades (por ejemplo {@code config.properties})
+     * @return instancia de {@link Config} con los valores cargados o por defecto
+     * @throws IOException si ocurre un error de E/S al leer el fichero
+     */
     public static Config load(String path) throws IOException {
         Properties p = new Properties();
         try (FileInputStream in = new FileInputStream(path)) {
@@ -76,11 +93,33 @@ public class Config {
         return new Config(p);
     }
 
+
+    /** Host del servidor FTP. */
     public String getFtpHost() { return ftpHost; }
+
+    /** Puerto del servidor FTP. */
     public int getFtpPort() { return ftpPort; }
+
+    /** Usuario para autenticación FTP. */
     public String getFtpUser() { return ftpUser; }
+
+    /** Contraseña para autenticación FTP. */
     public String getFtpPass() { return ftpPass; }
+
+    /**
+     * Directorio local a sincronizar.
+     *
+     * <p>Puede ser una ruta absoluta o relativa (resuelta contra el working directory).</p>
+     */
     public Path getLocalDir() { return localDir; }
+
+    /**
+     * Directorio remoto en el servidor FTP donde se realizará la lectura/subida.
+     *
+     * <p>Su semántica (absoluta/relativa) depende del servidor FTP y del usuario.</p>
+     */
     public String getRemoteDir() { return remoteDir; }
+
+    /** Intervalo en segundos para la sincronización periódica desde FTP hacia local. */
     public int getPollSeconds() { return pollSeconds; }
 }
