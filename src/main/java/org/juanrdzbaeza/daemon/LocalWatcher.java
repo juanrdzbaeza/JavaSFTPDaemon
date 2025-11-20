@@ -32,7 +32,14 @@ public class LocalWatcher {
         registerAll(dir);
 
         while (running) {
-            WatchKey key = watcher.take();
+            WatchKey key;
+            try {
+                key = watcher.take();
+            } catch (ClosedWatchServiceException cwse) {
+                // El WatchService fue cerrado (probablemente por stop()).
+                // Salir del bucle de forma silenciosa para evitar stacktrace.
+                break;
+            }
             Path watchDir = (Path) key.watchable();
             for (WatchEvent<?> ev : key.pollEvents()) {
                 WatchEvent.Kind<?> kind = ev.kind();
